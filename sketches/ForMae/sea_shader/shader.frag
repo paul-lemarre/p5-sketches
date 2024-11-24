@@ -14,6 +14,7 @@ uniform vec4      iMouse;                // mouse pixel coords. xy: current (if 
 #define ITERATIONS_RAYMARCH 12 // waves iterations of raymarching
 #define ITERATIONS_NORMAL 30 // waves iterations when calculating normals
 #define NormalizedMouse (iMouse.xy / iResolution.xy) // normalize mouse coords
+#define M_PI 3.1415926535897932384626433832795
 
 // Calculates wave value and its derivative, 
 // for the wave direction, position in space, wave frequency and time
@@ -28,8 +29,8 @@ vec2 wavedx(vec2 position, vec2 direction, float frequency, float timeshift) {
 float getwaves(vec2 position, int iterations) {
   float wavePhaseShift = length(position) * 0.1; // this is to avoid every octave having exactly the same phase everywhere
   float iter = 0.0; // this will help generating well distributed wave directions
-  float frequency = 1.0; // frequency of the wave, this will change every iteration
-  float timeMultiplier = 2.0; // time multiplier for the wave, this will change every iteration
+  float frequency = 0.5; // frequency of the wave, this will change every iteration - higher frequency = more detail
+  float timeMultiplier = 1.0; // time multiplier for the wave, this will change every iteration
   float weight = 1.0;// weight in final sum for the wave, this will change every iteration
   float sumOfValues = 0.0; // will store final sum of values
   float sumOfWeights = 0.0; // will store final sum of weights
@@ -51,11 +52,12 @@ float getwaves(vec2 position, int iterations) {
 
     // modify next octave ;
     weight = mix(weight, 0.0, 0.2);
-    frequency *= 1.15;
-    timeMultiplier *= 0.3;
+    frequency *= 1.1; // controls the wave details
+    timeMultiplier *= 1.2; // controls the wave speed - TODO: parametrize
 
     // add some kind of random value to make next wave look random too
-    iter += 1232.399963;
+    iter += 1234.1234;
+
   }
   // calculate and return
   return sumOfValues / sumOfWeights;
@@ -110,14 +112,15 @@ vec3 getRay(vec2 fragCoord) {
   vec2 uv = ((fragCoord.xy / iResolution.xy) * 2.0 - 1.0) * vec2(iResolution.x / iResolution.y, 1.0);
   // for fisheye, uncomment following line and comment the next one
   //vec3 proj = normalize(vec3(uv.x, uv.y, 1.0) + vec3(uv.x, uv.y, -1.0) * pow(length(uv), 2.0) * 0.05);  
-  vec3 proj = normalize(vec3(uv.x, uv.y, 1.5));
+  vec3 proj = normalize(vec3(uv.x, uv.y, 1.0));
   if(iResolution.x < 600.0) {
     return proj;
   }
   //return createRotationMatrixAxisAngle(vec3(0.0, -1.0, 0.0), 3.0 * ((NormalizedMouse.x + 0.5) * 2.0 - 1.0)) 
   //  * createRotationMatrixAxisAngle(vec3(1.0, 0.0, 0.0), 0.5 + 1.5 * (((NormalizedMouse.y == 0.0 ? 0.27 : NormalizedMouse.y) * 1.0) * 2.0 - 1.0))
   //  * proj;
-  return createRotationMatrixAxisAngle(vec3(1.0,0.0,0.0),-0.9)* proj;
+  mat3 rotateAroundXAxis = createRotationMatrixAxisAngle(vec3(1.0,0.0,0.0),-M_PI/10.0);
+  return rotateAroundXAxis * proj;
 }
 
 // Ray-Plane intersection checker
@@ -142,7 +145,8 @@ vec3 extra_cheap_atmosphere(vec3 raydir, vec3 sundir) {
 
 // Calculate where the sun should be, it will be moving around the sky
 vec3 getSunDirection() {
-  return normalize(vec3(-0.0773502691896258 , 0.5 + sin(iTime * 0.1 + 2.6) * 0.45 , 0.57 + cos(iTime * 0.1 + 2.6) * 0.45));
+    return normalize(vec3(M_PI/2.0,0.1,1.2*M_PI)); // position of the sun -- TODO: figure out the angles
+//   return normalize(vec3(-0.0773502691896258 , 0.5 + sin(iTime * 0.1 + 2.6) * 0.45 , 0.57 + cos(iTime * 0.1 + 2.6) * 0.45));
 }
 
 // Get atmosphere color for given direction
@@ -152,7 +156,7 @@ vec3 getAtmosphere(vec3 dir) {
 
 // Get sun color for given direction
 float getSun(vec3 dir) { 
-  return pow(max(0.0, dot(dir, getSunDirection())), 1000.0) * 1.0;
+  return pow(max(0.0, dot(dir, getSunDirection())), 1.0) * .05;
 }
 
 // Great tonemapping function from my other shader: https://www.shadertoy.com/view/XsGfWV
@@ -190,7 +194,7 @@ void main() {
   vec3 waterPlaneLow = vec3(0.0, -WATER_DEPTH, 0.0);
 
   // define ray origin, moving around
-  vec3 origin = vec3(iTime * 0.1, CAMERA_HEIGHT, 1);
+  vec3 origin = vec3(iTime * 0.5, CAMERA_HEIGHT, 1);
 
   // calculate intersections and reconstruct positions
   float highPlaneHit = intersectPlane(origin, ray, waterPlaneHigh, vec3(0.0, 1.0, 0.0));
@@ -209,7 +213,7 @@ void main() {
   N = mix(N, vec3(0.0, 1.0, 0.0), 0.8 * min(1.0, sqrt(dist*0.01) * 1.1));
 
   // calculate fresnel coefficient
-  float fresnel = (0.04 + (1.0-0.04)*(pow(1.0 - max(0.0, dot(-N, ray)), 10.0)));
+  float fresnel = (0.04 + (5.0-0.04)*(pow(1.0 - max(0.0, dot(-N, ray)), 8.0)));
 
   // reflect the ray and make sure it bounces up
   vec3 R = normalize(reflect(ray, N));
