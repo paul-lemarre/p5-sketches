@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FBM Contour Shader</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@docsearch/css@3">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+  <style>
+    #canvas-container {
+      border: 1px solid #ccc;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      line-height: 0;
+    }
+  </style>
+</head>
+
+<body>
+  <header data-bs-theme="dark">
+    <div class="collapse text-bg-dark" id="navbarHeader">
+      <div class="container">
+        <div class="row">
+          <div class="col-sm-8 col-md-7 py-4">
+            <h4>About</h4>
+            <p class="text-body-secondary">This is my personal gallery of p5 sketches.</p>
+          </div>
+          <div class="col-sm-4 offset-md-1 py-4">
+            <h4>Contact</h4>
+            <ul class="list-unstyled">
+              <li><a href="#" class="text-white">Some contact info</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="navbar navbar-dark bg-dark shadow-sm">
+      <div class="container">
+        <a href="../../index.html" class="navbar-brand d-flex align-items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="white" stroke="currentColor" aria-hidden="true" class="me-2" viewBox="0 0 512 512">
+            <path d="M512 256c0 .9 0 1.8 0 2.7c-.4 36.5-33.6 61.3-70.1 61.3L344 320c-26.5 0-48 21.5-48 48c0 3.4 .4 6.7 1 9.9c2.1 10.2 6.5 20 10.8 29.9c6.1 13.8 12.1 27.5 12.1 42c0 31.8-21.6 60.7-53.4 62c-3.5 .1-7 .2-10.6 .2C114.6 512 0 397.4 0 256S114.6 0 256 0S512 114.6 512 256zM128 288a32 32 0 1 0 -64 0 32 32 0 1 0 64 0zm0-96a32 32 0 1 0 0-64 32 32 0 1 0 0 64zM288 96a32 32 0 1 0 -64 0 32 32 0 1 0 64 0zm96 96a32 32 0 1 0 0-64 32 32 0 1 0 0 64z" />
+            <circle cx="12" cy="13" r="4" />
+          </svg>
+          <strong>Sketches</strong>
+        </a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarHeader" aria-controls="navbarHeader" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="canvas-container"></div>
+
+  <script>
+    let myShader;
+    const CANVAS_SIZE = 600;
+
+    const vs = `
+            precision highp float;
+            attribute vec3 aPosition;
+            uniform mat4 uProjectionMatrix;
+            uniform mat4 uModelViewMatrix;
+
+            void main() {
+                gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
+            }
+        `;
+
+    const fs = `
+            precision highp float;
+            uniform vec2 u_resolution;
+            uniform float u_time;
+
+            vec2 hash(vec2 p) {
+                p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+                return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+            }
+
+            float gradientNoise(vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+
+                return mix(mix(dot(hash(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)), 
+                               dot(hash(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+                           mix(dot(hash(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)), 
+                               dot(hash(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x), u.y);
+            }
+
+            float fbm(vec2 p) {
+                float v = 0.0;
+                float a = 0.5;
+                mat2 rot = mat2(1.2, 0.9, -0.9, 1.2);
+                for (int i = 0; i < 4; i++) {
+                    v += a * gradientNoise(p);
+                    p = rot * p; 
+                    a *= 0.5;
+                }
+                return v;
+            }
+
+            float getFieldValue(vec2 st, float t) {
+                vec2 pos = st * 1.3;
+                
+                // Keep the FBM dominance on the left
+                float morphCenter = 0.33;
+                float morphWidth = 0.5;
+                float morph = smoothstep(morphCenter - morphWidth, morphCenter + morphWidth, st.x);
+
+                // Noise Field
+                vec2 q = vec2(fbm(pos + vec2(0.0, t)), fbm(pos + vec2(5.2, 1.3)));
+                vec2 r = vec2(fbm(pos + 1.2 * q + vec2(1.7, 9.2) + t * 0.2),
+                              fbm(pos + 1.2 * q + vec2(8.3, 2.8) + t * 0.1));
+                float noiseField = fbm(pos + 1.5 * r);
+                float verticalScroll = -t * 0.4;
+                float zNoise = noiseField * 2.5 + length(st) * 0.8 + verticalScroll;
+
+                // Regular Field (Flowing Right to Left)
+                // We add a subtle curve and use a negative linear x component
+                // so lines move closer as x decreases.
+                float yCurvature = sin(st.y * 2.0 + st.x * 1.5) * 0.2;
+                
+                // Logic: 
+                // -2.5 * st.x creates the primary right-to-left gradient.
+                // + exp(...) adds a non-linear gathering effect as we move left.
+                float zRegular = (-2.5 * (st.x + yCurvature)) + (exp(-(st.x + 0.5) * 1.5)) * 0.8 + verticalScroll;
+
+                return mix(zNoise, zRegular, morph);
+            }
+
+            void main() {
+                vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+                vec2 st = (uv * 2.0 - 1.0);
+                st.x *= u_resolution.x / u_resolution.y;
+
+                float distFromCenter = length(st);
+                float mask = smoothstep(0.85, 0.86, distFromCenter); 
+
+                float t = u_time * 0.15; 
+                float spacing = 0.14;
+
+                float z = getFieldValue(st, t);
+                float val = z / spacing;
+
+                // --- MANUAL ANTI-ALIASING ---
+                float delta = 1.0 / u_resolution.y; 
+                float zX = getFieldValue(st + vec2(delta, 0.0), t);
+                float zY = getFieldValue(st + vec2(0.0, delta), t);
+                
+                float grad = length(vec2(zX - z, zY - z)) / (delta * spacing);
+                
+                float thickness = 0.14; 
+                float smoothing = max(grad * 0.005, 0.04); 
+                
+                float fraction = fract(val);
+                float line = smoothstep(thickness + smoothing, thickness, abs(fraction - 0.5));
+
+                vec3 whiteBG = vec3(1.0, 1.0, 1.0);
+                vec3 navyBlue = vec3(0.0, 0.1, 0.3);
+                
+                vec3 patternColor = mix(whiteBG, navyBlue, line);
+                vec3 finalColor = mix(patternColor, whiteBG, mask);
+
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `;
+
+    function setup() {
+      const canvas = createCanvas(CANVAS_SIZE, CANVAS_SIZE, WEBGL);
+      canvas.parent('canvas-container');
+      pixelDensity(1);
+      myShader = createShader(vs, fs);
+    }
+
+    function draw() {
+      if (!myShader) return;
+      shader(myShader);
+      myShader.setUniform('u_resolution', [width, height]);
+      myShader.setUniform('u_time', millis() / 1000.0);
+      rect(-width / 2, -height / 2, width, height);
+    }
+  </script>
+</body>
+
+</html>
